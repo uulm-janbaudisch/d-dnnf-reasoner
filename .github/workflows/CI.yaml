@@ -5,7 +5,7 @@ on:
 
 jobs:
   Check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,38 +21,58 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - double: x86_64-linux
-            runner: ubuntu-latest
+          - double: x86_64-linux # target we are building for
+            system: x86_64-linux # host system the build is running on
+            runner: ubuntu-24.04 # GitHub runner the build is running on
+          - double: aarch64-linux
+            system: aarch64-linux
+            runner: ubuntu-24.04
           - double: x86_64-darwin
+            system: x86_64-darwin
             runner: macos-13
           - double: aarch64-darwin
+            system: aarch64-darwin
             runner: macos-latest
         variant:
-          - flake: ddnnife
-            artifact: ''
+          - flake: ddnnife # flake URL part
+            artifact: ''   # suffix for the uploaded artifact
           - flake: ddnnife-d4-bundled
             artifact: '-d4'
         exclude:
+          # Without d4, ddnnife for Linux is built statically.
           - target: { double: x86_64-linux }
             variant: { flake: ddnnife }
+          - target: { double: aarch64-linux }
+            variant: { flake: ddnnife }
         include:
-          - target: { double: x86_64-linux, runner: ubuntu-latest }
+          - target: { double: aarch64-linux, system: aarch64-linux, runner: ubuntu-24.04 }
             variant: { flake: ddnnife-static, artifact: '' }
             docs: true
-          - target: { double: x86_64-windows, runner: ubuntu-latest }
+          - target: { double: x86_64-linux, system: x86_64-linux, runner: ubuntu-24.04 }
+            variant: { flake: ddnnife-static, artifact: '' }
+          # Windows builds are cross-compiled on x86_64-linux.
+          - target: { double: x86_64-windows, system: x86_64-linux, runner: ubuntu-24.04 }
             variant: { flake: ddnnife-windows, artifact: '' }
-          - target: { double: x86_64-windows, runner: ubuntu-latest }
+          - target: { double: x86_64-windows, system: x86_64-linux, runner: ubuntu-24.04 }
             variant: { flake: ddnnife-windows-d4-bundled, artifact: '-d4' }
     runs-on: ${{ matrix.target.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # aarch64-linux builds are emulated on x86_64-linux.
+      - name: QEMU
+        if: ${{ matrix.target.double == 'aarch64-linux' }}
+        run: sudo apt-get install -y qemu-user-static
       - name: Nix
         uses: DeterminateSystems/nix-installer-action@v10
+        with:
+          extra-conf: system = ${{ matrix.target.system }}
       - name: Cache
         uses: DeterminateSystems/magic-nix-cache-action@v4
       - name: Build
         run: nix build -L .#${{ matrix.variant.flake }}
+      # The dynamic Linux binaries produced by Nix have their interpreter set to the one used by the Nix build.
+      # This has to be reset to make them work outside of this build.
       - name: Set interpreter
         if: ${{ matrix.target.double == 'x86_64-linux' && matrix.variant.flake == 'ddnnife-d4-bundled' }}
         run: |
