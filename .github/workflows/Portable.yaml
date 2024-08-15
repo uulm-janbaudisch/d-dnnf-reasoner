@@ -16,9 +16,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Nix
-        uses: DeterminateSystems/nix-installer-action@v10
+        uses: DeterminateSystems/nix-installer-action@v13
       - name: Cache
-        uses: DeterminateSystems/magic-nix-cache-action@v4
+        uses: DeterminateSystems/magic-nix-cache-action@v7
       - name: Bundle
         run: nix bundle --bundler github:DavHau/nix-portable -o bundle .#ddnnife-d4
       - name: Upload
