@@ -5,14 +5,14 @@ on:
 
 jobs:
   Check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Nix
-        uses: DeterminateSystems/nix-installer-action@v10
+        uses: DeterminateSystems/nix-installer-action@v13
       - name: Cache
-        uses: DeterminateSystems/magic-nix-cache-action@v4
+        uses: DeterminateSystems/magic-nix-cache-action@v7
       - name: Check
         run: nix flake check -L
 
@@ -21,39 +21,62 @@ jobs:
       fail-fast: false
       matrix:
         target:
+#          - double: aarch64-linux                   # target we are building for
+#            system: aarch64-linux                   # system we are building on
+#            emulated: true                          # whether this build is being emulated
+#            runner: ubuntu-24.04                    # GitHub runner the build is running on
+#            interpreter: /lib/ld-linux-aarch64.so.1 # path to libc interpreter
           - double: x86_64-linux
-            runner: ubuntu-latest
-          - double: x86_64-darwin
-            runner: macos-13
-          - double: aarch64-darwin
-            runner: macos-latest
+            system: x86_64-linux
+            runner: ubuntu-24.04
+            interpreter: /lib64/ld-linux-x86-64.so.2
+#          - double: x86_64-darwin
+#            system: x86_64-darwin
+#            runner: macos-13
+#          - double: aarch64-darwin
+#            system: aarch64-darwin
+#            runner: macos-latest
         variant:
           - flake: ddnnife
             artifact: ''
-          - flake: bundled-d4
+          - flake: ddnnife-d4-bundled
             artifact: '-d4'
+        exclude:
+          - target: { double: x86_64-linux }
+            variant: { flake: ddnnife }
+#          - target: { double: aarch64-linux }
+#            variant: { flake: ddnnife }
         include:
-          - target: { double: x86_64-windows, runner: ubuntu-latest }
-            variant: { flake: ddnnife-windows, artifact: '' }
-          - target: { double: x86_64-windows, runner: ubuntu-latest }
-            variant: { flake: bundled-d4-windows, artifact: '-d4' }
+#          - target: { double: aarch64-linux, system: aarch64-linux, emulated: true, runner: ubuntu-24.04 }
+#            variant: { flake: ddnnife-static, artifact: '' }
+          - target: { double: x86_64-linux, system: x86_64-linux, runner: ubuntu-24.04, docs: true }
+            variant: { flake: ddnnife-static, artifact: '' }
+#          - target: { double: x86_64-windows, system: x86_64-linux, runner: ubuntu-24.04 }
+#            variant: { flake: ddnnife-windows, artifact: '' }
+#          - target: { double: x86_64-windows, system: x86_64-linux, runner: ubuntu-24.04 }
+#            variant: { flake: ddnnife-windows-d4-bundled, artifact: '-d4' }
     runs-on: ${{ matrix.target.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: QEMU
+        if: ${{ matrix.target.emulated }}
+        run: sudo apt-get install -y qemu-user-static
       - name: Nix
-        uses: DeterminateSystems/nix-installer-action@v10
+        uses: DeterminateSystems/nix-installer-action@v13
+        with:
+          extra-conf: extra-platforms = ${{ matrix.target.system }}
       - name: Cache
-        uses: DeterminateSystems/magic-nix-cache-action@v4
+        uses: DeterminateSystems/magic-nix-cache-action@v7
       - name: Build
-        run: nix build -L .#${{ matrix.variant.flake }}
+        run: nix build -L .#packages.${{ matrix.target.system }}.${{ matrix.variant.flake }}
       - name: Set interpreter
-        if: ${{ matrix.target.double == 'x86_64-linux' && matrix.variant.flake == 'bundled-d4' }}
+        if: ${{ matrix.target.interpreter }}
         run: |
           cp -rL result output
           rm -rf result
           chmod +w output/bin/*
-          nix run nixpkgs#patchelf -- --set-interpreter /lib64/ld-linux-x86-64.so.2 output/bin/*
+          nix run nixpkgs#patchelf -- --set-interpreter ${{ matrix.target.interpreter }} output/bin/*
           chmod -w output/bin/*
           mv output result
       - name: Upload
@@ -61,3 +84,20 @@ jobs:
         with:
           name: ddnnife-${{ matrix.target.double }}${{ matrix.variant.artifact }}
           path: result
+      - name: Docs
+        if: ${{ matrix.target.docs }}
+        run: |
+          nix build .#documentation
+          mkdir docs
+          cp -rL result/share/doc docs/rust
+      - name: Upload (docs)
+        if: ${{ matrix.target.docs }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-rust
+          path: docs
+
+  Pages:
+    if: github.ref == 'refs/heads/main'
+    needs: Build
+    uses: ./.github/workflows/Pages.yaml

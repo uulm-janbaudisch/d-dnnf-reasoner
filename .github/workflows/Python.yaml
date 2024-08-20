@@ -1,4 +1,4 @@
-#name: Portable
+#name: Python
 #
 #on:
 #  - push
@@ -11,6 +11,10 @@
 #        target:
 #          - double: x86_64-linux
 #            runner: ubuntu-latest
+#          - double: x86_64-darwin
+#            runner: macos-13
+#          - double: aarch64-darwin
+#            runner: macos-latest
 #    runs-on: ${{ matrix.target.runner }}
 #    steps:
 #      - name: Checkout
@@ -19,10 +23,10 @@
 #        uses: DeterminateSystems/nix-installer-action@v13
 #      - name: Cache
 #        uses: DeterminateSystems/magic-nix-cache-action@v7
-#      - name: Bundle
-#        run: nix bundle --bundler github:DavHau/nix-portable -o bundle .#ddnnife-d4
+#      - name: Build
+#        run: nix build -L .#python
 #      - name: Upload
 #        uses: actions/upload-artifact@v4
 #        with:
-#          name: ddnnife-${{ matrix.target.double }}-d4-portable
-#          path: bundle
+#          name: ddnnife-python-${{ matrix.target.double }}
+#          path: result
